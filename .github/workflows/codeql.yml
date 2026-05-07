@@ -1,201 +1,27 @@
-name: CI
-
-on:
-  push:
-    branches: [main, master, dev]
-  pull_request:
-    branches: [main, master, dev]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  build-and-audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install deps
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f package.json ]; then
-            npm install
-          else
-            echo "No package.json found, skipping install."
-          fi
-
-      - name: Run format check if present
-        shell: bash
-        run: |
-          if [ -f package.json ]; then
-            node -e "const p=require('./package.json'); process.exit(p.scripts?.['format:check'] ? 0 : 1)" \
-              && npm run format:check \
-              || echo "No format:check script"
-          fi
-
-      - name: Run lint if present
-        shell: bash
-        run: |
-          if [ -f package.json ]; then
-            node -e "const p=require('./package.json'); process.exit(p.scripts?.lint ? 0 : 1)" \
-              && npm run lint \
-              || echo "No lint script"
-          fi
-
-      - name: Build
-        shell: bash
-        run: |
-          if [ -f package.json ]; then
-            node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" \
-              && npm run build \
-              || echo "No build script"
-          fi
-
-      - name: Run tests if present
-        shell: bash
-        run: |
-          if [ -f package.json ]; then
-            node -e "const p=require('./package.json'); process.exit(p.scripts?.test ? 0 : 1)" \
-              && npm test \
-              || echo "No test script"
-          fi
-
-      - name: Audit all
-        shell: bash
-        run: |
-          if [ -f package.json ]; then
-            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:all'] ? 0 : 1)" \
-              && npm run audit:all \
-              || echo "No audit:all script"
-          fi
-
-      - name: Upload public artifact
-        if: always() && hashFiles('public/**') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: public-site
-          path: public
-          name: CodeQL
-
-on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
-  schedule:
-    - cron: '23 5 * * 1'
-
-permissions:
-  actions: read
-  contents: read
-  security-events: write
-
-jobs:
-  analyze:
-    name: Analyze JavaScript/TypeScript
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-          config-file: ./.github/codeql/codeql-config.yml
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install deps if present
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f package.json ]; then
-            npm install
-          else
-            echo "No package.json found, skipping install."
-          fi
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Manual build fallback
-        if: failure()
-        shell: bash
-        run: |
-          if [ -f package.json ]; then
-            node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" \
-              && npm run build \
-              || echo "No manual build script available"
-          fi
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        name: "Forge Atlas CodeQL Config"
-
-paths:
-  - src
-  - scripts
-  - workers
-
-paths-ignore:
-  - node_modules
-  - public
-  - dist
-  - build
-  - coverage
-  - source-archives
-  name: Repo Health
-
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '17 6 * * 1'
-  push:
-    branches: [main, master]
-    paths:
-      - "scripts/**"
-      - "src/**"
-      - "public/**"
-      - "package.json"
-      - ".github/workflows/repo-health.yml"
-
-permissions:
-  contents: read
-
-jobs:
-  repo-health:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+            - name: Setup .NET Core SDK
+  uses: actions/setup-dotnet@v5.2.0
+  with:
+    # Optional SDK version(s) to use. If not provided, will install global.json version when available. Examples: 2.2.104, 3.1, 3.1.x, 3.x, 6.0.2xx
+    dotnet-version: # optional
+    # Optional quality of the build. The possible values are: daily, signed, validated, preview, ga.
+    dotnet-quality: # optional
+    # Optional global.json location, if your global.json isn't located in the root of the repo.
+    global-json-file: # optional
+    # Optional package source for which to set up authentication. Will consult any existing NuGet.config in the root of the repo and provide a temporary NuGet.config using the NUGET_AUTH_TOKEN environment variable as a ClearTextPassword
+    source-url: # optional
+    # Optional OWNER for using packages from GitHub Package Registry organizations/users other than the current repository's owner. Only used if a GPR URL is also provided in source-url
+    owner: # optional
+    # Optional NuGet.config location, if your NuGet.config isn't located in the root of the repo.
+    config-file: # optional
+    # Optional input to enable caching of the NuGet global-packages folder
+    cache: # optional
+    # Used to specify the path to a dependency file: packages.lock.json. Supports wildcards or a list of file names for caching multiple dependencies.
+    cache-dependency-path: # optional
+    # Optional SDK workloads to install for additional platform support. Examples: wasm-tools, maui, aspire.
+    workloads: # optional
+    # Optional architecture for the .NET install. Supported values: x64, x86, arm64, amd64, arm, s390x, ppc64le, riscv64. If not set, the installer auto-detects the current system architecture.
+    architecture: # optional
+          
     steps:
       - name: Checkout
         uses: actions/checkout@v4
