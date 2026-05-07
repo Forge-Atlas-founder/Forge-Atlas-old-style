@@ -1,0 +1,70 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    target-branch: "main"
+    rebase-strategy: "auto"
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "automerge-candidate"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    groups:
+      npm-patch-and-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 3
+    target-branch: "main"
+    rebase-strategy: "auto"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automerge-candidate"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      gh-actions-safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      gh-actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
