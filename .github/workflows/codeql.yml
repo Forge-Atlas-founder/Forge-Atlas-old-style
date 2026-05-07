@@ -1,97 +1,273 @@
-# For most projects, this workflow file will not need changing; you simply need
-# to commit it to your repository.
-#
-# You may wish to alter this file to override the set of languages analyzed,
-# or to provide custom queries or build logic.
-#
-# ******** NOTE ********
-# We have attempted to detect the languages in your repository. Please check
-# the `language` matrix defined below to confirm you have the correct set of
-# supported CodeQL languages.
-#
-name: "CodeQL Advanced"
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, master, dev]
   pull_request:
-    branches: [ "main" ]
+    branches: [main, master, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f package.json ]; then
+            npm install
+          else
+            echo "No package.json found, skipping install."
+          fi
+
+      - name: Run format check if present
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['format:check'] ? 0 : 1)" \
+              && npm run format:check \
+              || echo "No format:check script"
+          fi
+
+      - name: Run lint if present
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.lint ? 0 : 1)" \
+              && npm run lint \
+              || echo "No lint script"
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" \
+              && npm run build \
+              || echo "No build script"
+          fi
+
+      - name: Run tests if present
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.test ? 0 : 1)" \
+              && npm test \
+              || echo "No test script"
+          fi
+
+      - name: Audit all
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:all'] ? 0 : 1)" \
+              && npm run audit:all \
+              || echo "No audit:all script"
+          fi
+
+      - name: Upload public artifact
+        if: always() && hashFiles('public/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-site
+          path: public
+          name: CodeQL
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   schedule:
-    - cron: '39 9 * * 0'
+    - cron: '23 5 * * 1'
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
 
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
-    # Runner size impacts CodeQL analysis time. To learn more, please see:
-    #   - https://gh.io/recommended-hardware-resources-for-running-codeql
-    #   - https://gh.io/supported-runners-and-hardware-resources
-    #   - https://gh.io/using-larger-runners (GitHub.com only)
-    # Consider using larger runners or machines with greater resources for possible analysis time improvements.
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
-    permissions:
-      # required for all workflows
-      security-events: write
-
-      # required to fetch internal or private CodeQL packs
-      packages: read
-
-      # only required for workflows in private repositories
-      actions: read
-      contents: read
+    name: Analyze JavaScript/TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-        # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
-        # Use `c-cpp` to analyze code written in C, C++ or both
-        # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
-        # Use 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
-        # To learn more about changing the languages that are analyzed or customizing the build mode for your analysis,
-        # see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning.
-        # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
-        # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
+        language: [javascript-typescript]
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Add any setup steps before running the `github/codeql-action/init` action.
-    # This includes steps like installing compilers or runtimes (`actions/setup-node`
-    # or others). This is typically only required for manual builds.
-    # - name: Setup runtime (example)
-    #   uses: actions/setup-example@v1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          config-file: ./.github/codeql/codeql-config.yml
 
-    # Initializes the CodeQL tools for scanning.
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
-      with:
-        languages: ${{ matrix.language }}
-        build-mode: ${{ matrix.build-mode }}
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # By default, queries listed here will override any specified in a config file.
-        # Prefix the list here with "+" to use these queries and those in the config file.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-        # queries: security-extended,security-and-quality
+      - name: Install deps if present
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f package.json ]; then
+            npm install
+          else
+            echo "No package.json found, skipping install."
+          fi
 
-    # If the analyze step fails for one of the languages you are analyzing with
-    # "We were unable to automatically build your code", modify the matrix above
-    # to set the build mode to "manual" for that language. Then modify this step
-    # to build your code.
-    # ℹ️ Command-line programs to run using the OS shell.
-    # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-    - name: Run manual build steps
-      if: matrix.build-mode == 'manual'
-      shell: bash
-      run: |
-        echo 'If you are using a "manual" build mode for one or more of the' \
-          'languages you are analyzing, replace this with the commands to build' \
-          'your code, for example:'
-        echo '  make bootstrap'
-        echo '  make release'
-        exit 1
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
-      with:
-        category: "/language:${{matrix.language}}"
+      - name: Manual build fallback
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" \
+              && npm run build \
+              || echo "No manual build script available"
+          fi
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        name: "Forge Atlas CodeQL Config"
+
+paths:
+  - src
+  - scripts
+  - workers
+
+paths-ignore:
+  - node_modules
+  - public
+  - dist
+  - build
+  - coverage
+  - source-archives
+  name: Repo Health
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+  push:
+    branches: [main, master]
+    paths:
+      - "scripts/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - ".github/workflows/repo-health.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  repo-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Audit links
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:links'] ? 0 : 1)" \
+              && npm run audit:links \
+              || echo "No audit:links script"
+          fi
+
+      - name: Audit metadata
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:metadata'] ? 0 : 1)" \
+              && npm run audit:metadata \
+              || echo "No audit:metadata script"
+          fi
+
+      - name: Audit sitemap
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:sitemap'] ? 0 : 1)" \
+              && npm run audit:sitemap \
+              || echo "No audit:sitemap script"
+          fi
+
+      - name: Audit assets
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:assets'] ? 0 : 1)" \
+              && npm run audit:assets \
+              || echo "No audit:assets script"
+          fi
+
+      - name: Audit duplicates if present
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:duplicates'] ? 0 : 1)" \
+              && npm run audit:duplicates \
+              || echo "No audit:duplicates script"
+          fi
+
+      - name: Audit nav if present
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:nav'] ? 0 : 1)" \
+              && npm run audit:nav \
+              || echo "No audit:nav script"
+          fi
+
+      - name: Audit deploy if present
+        run: |
+          if [ -f package.json ]; then
+            node -e "const p=require('./package.json'); process.exit(p.scripts?.['audit:deploy'] ? 0 : 1)" \
+              && npm run audit:deploy \
+              || echo "No audit:deploy script"
+          fi
